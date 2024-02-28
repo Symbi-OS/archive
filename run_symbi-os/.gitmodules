@@ -1,0 +1,9 @@
+[submodule "artifacts"]
+	path = artifacts
+	url = git@github.com:Symbi-OS/artifacts.git
+[submodule "networking"]
+	path = networking
+	url = git@github.com:Symbi-OS/networking.git
+[submodule "Run"]
+	path = Run
+	url = git@github.com:Symbi-OS/Run.git
