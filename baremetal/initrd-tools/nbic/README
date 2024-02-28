@@ -1,0 +1,295 @@
+`nbic' README -- instructions for using and introduction to the project.
+Copyright (C) 2007,2008  Amos Waterland.
+See the end for copying conditions.
+
+Net Boot Image Compiler - nbic.
+
+Please send `nbic' bug reports and patches to <apw@us.ibm.com>.
+
+Introduction
+============
+
+The nbic tools automate the process of building stripped-down root
+filesystems for Linux on diskless compute nodes.
+
+The project was developed for running standard Linux userspaces on
+Blue Gene/P, but it has also been used to build dom0 images for Xen
+and automated firmware reflashers for blades.  It is informally
+described as a "cpio builder", since Linux's format for its initramfs
+root filesystem is cpio.  The cpio images produced by nbic are
+typically 1% to 5% of the size of the software appliances produced by
+other techniques.
+
+The nbic tools require the existence of a reference root directory
+tree.  This tree may be managed by chroot, be an nfsroot export, or
+the virtual disk of an emulator.  The central design point is that the
+desired application stack is made to work in the reference
+environment, and then nbic is used to snapshot a stateless image that
+contains only the files actually used by the boot process and the
+target application stack.
+
+This approach contrasts with the Busybox approach, in which one builds
+from the bottom up the desired components.  Busybox is a good design
+for the embedded space, but it is difficult to use it to build
+full-function software appliances that support databases and other
+complex workloads.
+
+Quick Start
+===========
+
+Assuming you are on a Debian or Ubuntu system, you can paste the
+following commands into a terminal:
+
+ git-clone http://yktgsa.ibm.com/home/a/w/awaterl/git/nbic.git
+ export PATH=$PWD/nbic:$PATH
+ sudo apt-get install cdebootstrap
+ sudo cdebootstrap etch debian
+ echo -e '#!/bin/bash\n/bin/bash' > chroot
+ chmod +x chroot
+ sudo cp chroot debian/chroot
+ sudo mv chroot debian/init
+ nbic -d debian -o bash.cpio
+
+You will get a root shell in a chroot environment from the last
+command.  Just run whatever commands you want to be in the image and
+exit the shell.
+
+Assuming you ran the above commands on an x86 machine, you can
+immediately try out the image[1]:
+
+ sudo apt-get install qemu
+ gzip -9 bash.cpio
+ qemu -kernel /boot/vmlinuz-$(uname -r)* /dev/zero -initrd bash.cpio.gz
+
+Using An Image
+==============
+
+In the quick start you produced a cpio image.  You can boot it with
+qemu as shown above, but you can also quickly explore it by running
+the following command which unpacks the image into a temporary
+directory and gives you a chroot shell in it:
+
+ cpio-chroot bash.cpio.gz
+
+You can also unpack the image into a new directory tree:
+
+ cpio-unpack -f bash.cpio.gz -d bash
+
+Chroot Environment
+==================
+
+Note that we use sudo privelege escalation only as necessary in these
+examples.  We recommend that nbic be run as a regular user, since it
+internally invokes sudo if and only if it actually needs the
+privelege.
+
+In the above we created a file named `chroot' in the root of the
+chroot directory.  We do this to automate the series of steps one
+takes each time one chroots into the directory.  For example, to get
+enough infrastructure so that one can run things like apt-get, making
+sure to clean up after oneself when exiting, we recommend a /chroot
+like this:
+
+---
+
+#!/bin/bash
+mount -t proc /proc /proc
+mount -t sysfs /sys /sys
+mount -t devpts devpts /dev/pts
+/bin/bash
+umount /dev/pts
+umount /sys
+umount /proc
+
+---
+
+Note that nbic provides and uses internally the nd utility to get a
+shell in your chroot directory, so instead of typing the full chroot
+commands listed above one can simply supply the directory as an
+argument to nd and it will chroot with /chroot in the exact same way
+that nbic does.  Here is an example:
+
+ nd debian
+
+Customizing Startup
+===================
+
+The Linux kernel looks for a file named /init when it boots from an
+initramfs image.  Typically, your /init will do more than your
+/chroot, since it is intended to boot a system, rather than just get a
+shell.
+
+If your desired application stack can be started with simple commands
+like /usr/sbin/sshd, we recommend that you write them in /init and be
+done with it.  Here is an example from our sshd appliance:
+
+ #!/bin/bash
+ mount -t proc /proc /proc
+ mount -t sysfs /sys /sys
+ mount -t devpts devpts /dev/pts
+ /usr/sbin/sshd
+ /bin/bash
+
+If you are running a particularly complex application stack, it is
+best to exec the init daemon after doing what is necessary to get the
+system ready for it.  Here is an example from a Debian initramfs we
+use:
+
+ #!/bin/bash
+ mount -t proc /proc /proc
+ mount -t sysfs /sys /sys
+ mount -t devpts devpts /dev/pts
+ echo 1 > /proc/sys/net/ipv4/ip_forward
+ dhcpd eth1
+ exec /sbin/init
+
+We exec init so that it will have the PID of 1 that the kernel
+expects.  Note that we stripped down /etc/rc2.d/ to contain just sshd
+and a few other startup scripts.
+
+NFS Tracing
+===========
+
+The preceding sections described how to create an initramfs using a
+chroot technique.  Oftentimes however one will want to use NFS tracing
+to generate the list of files that should be included.
+
+Fundamentally, nbic just needs a list of files.  The list can be
+generated through the use of strace, the find command with the -atime
+option, or any number of other methods.  By default, and in the
+examples above, nbic will automatically build the list of files by
+dropping the user into a chroot shell and observing the files accessed
+during the session, but in the real world its most common use is
+actually to be invoked with the `--list' option, in which a file
+containing a list of files discovered through tracing is supplied as
+an argument.
+
+We describe in this section how to generate the list of files through
+inspection on an NFS server.  
+
+First take the sarge/ reference directory we made in the previous
+sections, complete with its /chroot and /init additions, and export it
+via NFS.  Here is one configuration line for /etc/exports that is
+known to work:
+
+ /nfsroots/sarge 192.168.0.0/16(rw,insecure,sync,no_root_squash,no_all_squash)
+
+Note that the Linux kernel to be booted on the target hardware must be
+configured to use an nfsroot.  Here is an example command line, which
+can be placed in CONFIG_CMDLINE in .config or supplied by firmware or
+bootloader arguments, that is known to work:
+
+ ip=::::::dhcp ro root=/dev/nfs nfsroot=192.168.0.1:/nfsroots/sarge init=/init
+
+Note the use of init=/init.  We do this because the initramfs cpio
+image we are going to produce will implicitly use that argument, as
+Linux forces init to be /init if it detects an initramfs supplied to
+it.
+
+First, create a timestamp file on the NFS server:
+
+ touch /nfsroots/TIMESTAMP
+
+Now boot the victim machine with the Linux kernel configured as in the
+preceding.  Log into the victim and exercise the desired set of
+programs, then shut the machine down either through software or a hard
+power-off.
+
+Now on the NFS server run a nbic utility that generates a list of
+files accessed from the exported directory during the boot of the
+victim machine:
+
+ cd /nfsroots
+ trace-files -t TIMESTAMP -d sarge/ -o sarge.list
+
+Note that trace-files is not idempotent.  As of this release, it
+internally uses find with the -atime option, so its results are only
+valid the first time it is run after a nfs boot off the target
+directory.
+
+Now use nbic to generate a cpio image from the newly-created list:
+
+ nbic -d sarge/ --list sarge.list -o sarge.cpio
+
+Then edit Linux's .config to have:
+
+ CONFIG_INITRAMFS_SOURCE="sarge.cpio"
+
+When Linux is recompiled and booted on the victim the user experience
+should be much the same as when it was using an nfsroot, with the
+exception that the root filesystem is now stateless in the sense that
+changes to it are not preserved across reboots.  This is a highly
+desireble property for software appliances and scale-out models, and
+has an analogy in the increasingly common use of livecds.  It also
+provides the locality necessary to boot thousands of machines with an
+identical root filesystem: our experiences with BG/P taught us that a
+single shared read/only nfsroot does not scale past 512 nodes.
+
+The initramfs approach contrasts with the shared read/only nfsroot
+approach, in which a lot of work is done to make a collection of tmpfs
+directories like /var/tmp so that daemons have local writeable
+directories, in that the root filesystem is completely writeable, but
+the write are not preserved across boots.
+
+As a final note, the big difference between our use of NFS tracing in
+this section and the chroot method in the previous is that NFS tracing
+gets the boot process while chroot does not.  All is not perfect
+however, as some distributions like SLES actually use udev instead of
+static device nodes.  This means that they mount a tmpfs over /dev
+early in boot, usually in /etc/init.d/boot, and then mknod devices on
+demand.  None of these devices are seen by the NFS tracing, so in this
+case it is usually best to just make sure that your /init provides
+support for the SLES init to create its device nodes as it normally
+does.
+
+Common Problems
+===============
+
+If sshd fails to start with a message about PRNG not being seeded, you
+are most likely missing /dev/random.  See the above comment about SLES
+and its use of udev.
+
+If you try to use debootstrap and it fails, it may be that it does not 
+support the Debian release you are trying to bootstrap.  You can also 
+try the cdeboostrap package, which seems to be what pbuilder uses 
+internally.  Here is an example:
+
+ sudo cdebootstrap etch etch
+
+Internals
+=========
+
+When one first attempts to roll an initramfs image from scratch, three
+non-obvious errors are often encountered.  The first is that GNU cpio
+does not by default create a cpio image of the "newc" format expected
+by the Linux kernel.  The second is that the in-kernel cpio unpacker
+does not create the directory components of pathnames, which means
+that in the case of /dev/console, neither /dev nor /dev/console will
+exist if /dev is not explicitly included in the cpio image.  The third
+is that it can be difficult to guess which device nodes are required
+by init and sshd.  Each of these three problems are automatically
+handled by nbic.
+
+Footnotes
+=========
+
+[1] If you do not have X Windows available, you will want to instruct
+    qemu not to open a graphical window as it does by default.  Simply
+    add these two options to your qemu invocation:
+
+     -nographic -append console=ttyS0
+
+----------------------------------------------------------------------
+Copyright information:
+
+Copyright (C) 2007,2008  Amos Waterland
+
+   Permission is granted to anyone to make or distribute verbatim copies
+   of this document as received, in any medium, provided that the
+   copyright notice and this permission notice are preserved,
+   thus giving the recipient permission to redistribute in turn.
+
+   Permission is granted to distribute modified versions
+   of this document, or of portions of it,
+   under the above conditions, provided also that they
+   carry prominent notices stating who last changed them.

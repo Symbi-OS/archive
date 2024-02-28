@@ -1,0 +1,18 @@
+#!/bin/bash
+
+set -e
+set -x
+
+f=$(mktemp /tmp/000-atime.XXX)
+
+a=$(stat --format=%X $f)
+sleep 1
+cat $f
+b=$(stat --format=%X $f)
+sleep 1
+cat $f
+c=$(stat --format=%X $f)
+test $a -lt $b
+test $b -lt $c
+set +x
+echo OK

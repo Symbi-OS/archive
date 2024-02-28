@@ -1,0 +1,69 @@
+#!/bin/bash
+
+NAME=cpio-du
+
+function help()
+{
+    echo -e "\`$NAME' shows size of files in a cpio image\n"           \
+	    "\n"                                                       \
+	    "Usage: $NAME CPIO\n"                                      \
+	    " -?, --help      Show this help statement\n"              \
+	    "     --version   Show version statement\n"                \
+	    "\n"                                                       \
+	    "Examples: $NAME foo.cpio\n";
+}
+
+function work()
+{
+    local cpio="$1";
+    local tmp=$(mktemp -d 0.nbic.XXXXXX)
+
+    cpio-unpack -f "$cpio" -d $tmp &&
+    cd $tmp &&
+    sudo du -ak * &&
+    cd $OLDPWD &&
+    sudo rm -rf $tmp ||
+    return 1;
+
+    return 0;
+}
+
+function main()
+{
+    local cpio;
+
+    while [ $# -gt 0 ]; do
+        case $1 in
+        -\? | --help)
+            help; return 1;
+            ;;
+        --version)
+            nbic --version; return 1;
+            ;;
+        *)
+            if [ -z "$cpio" ]; then
+	    	cpio="$1";
+	    else
+	        echo "$NAME: too many arguments: $1";
+		return 1;
+	    fi
+	    shift;
+            ;;
+        esac
+    done
+   
+    [ -f "$cpio" ] || {
+    	help;
+	return 1;
+    }
+
+    work "$cpio" || { 
+    	echo "$NAME: bailing out because of errors";
+	return 1;
+    }
+
+    return 0;
+}
+
+main "$@";
+exit $?;

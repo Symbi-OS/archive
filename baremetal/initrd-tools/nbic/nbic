@@ -1,0 +1,174 @@
+#!/bin/bash
+
+NAME=nbic
+VERSION=0.3.0
+INCLUDES="./init ./chroot ./mnt ./proc ./sys ./tmp ./dev ./var/tmp ./home"
+INCLUDES="$INCLUDES ./var/lib ./var/lock ./var/log ./var/run ./var/run/sshd"
+INCLUDES="$INCLUDES ./dev/console ./dev/null ./dev/random ./dev/initctl"
+INCLUDES="$INCLUDES ./dev/tty0 ./dev/tty1 ./dev/urandom ./dev/pts ./dev/ptmx"
+INCLUDES="$INCLUDES ./dev/tty ./dev/log ./dev/zero ./dev/loop0 ./dev/loop1"
+INCLUDES="$INCLUDES ./var/empty/sshd"
+SAVE_TEMPS=0
+EXCLUDES="^./usr/lib/locale|^./usr/lib/gconv|^./var/log/lastlog"
+EXCLUDES="$EXCLUDES|^./proc/|^./sys/|^./root/.bash_history|^./var/run/utmp"
+EXCLUDES="$EXCLUDES|^./var/cache/fontconfig|^./var/tmp/vi.recover"
+EXCLUDES="$EXCLUDES|^./var/log/wtmp"
+
+function help()
+{
+    echo -e "\`$NAME' compiles cpio archives for netboot images\n"          \
+        "\n"                                                                \
+        "Usage: $NAME -d DIR [-l LIST] -o CPIO\n"                           \
+        " -?, --help      Show this help statement.\n"                      \
+        "     --version   Show version statement.\n"                        \
+        " -d, --dir DIR   Use DIR as input directory.\n"                    \
+        " -l, --list LIST Select files from LIST instead of tracing.\n"     \
+        " -o, --out CPIO  Create output archive CPIO.\n"                    \
+        "\n"                                                                \
+        "Examples: $NAME -d linux -o ramfs.cpio\n"                          \
+        "          $NAME -d linux -l bash.list -o ramfs.cpio\n";
+}
+
+function build_cpio()
+{
+    local dir=$1
+    local out=$2
+    local list=$3
+
+    excludes="($EXCLUDES|^.$)"
+
+    includes=$(mktemp $PWD/0.nbic.XXXXXX) &&
+    initial=$(mktemp $PWD/1.nbic.XXXXXX) &&
+    stage=$(mktemp -d $PWD/2.nbic.XXXXXX) &&
+    final=$(mktemp $PWD/3.nbic.XXXXXX) &&
+    cd $dir ||
+    return 1;
+
+    sudo find $INCLUDES -maxdepth 0 > $includes 2> /dev/null;
+
+    cd $OLDPWD &&
+    sort $list $includes | uniq > $initial &&
+    sudo rsync -a --files-from=$initial $dir/ $stage/ &&
+    sudo touch $stage &&
+    cd $stage &&
+    sudo find . | egrep -v $excludes > $final &&
+    sudo cpio -o --quiet -H newc -O $out < $final &&
+    cd $OLDPWD &&
+    sudo chown $USER $out ||
+    return 1;
+
+    test $SAVE_TEMPS -eq 0 && {
+        sudo rm $includes &&
+        sudo rm $initial &&
+        sudo rm -r -f $stage &&
+        sudo rm $final ||
+        return 1
+    }
+
+    return 0;
+}
+
+function trace_chroot()
+{
+    local dir=$1;
+    local out=$2;
+
+    out=$(cd $(dirname $out) && pwd)/$(basename $out);
+    local trim=$out.$$.d
+    local cpio=$out.$$.cpio
+    local raw=/tmp/nbic.raw.$$;
+    local final=/tmp/nbic.final.$$;
+
+    stamp=$(mktemp $PWD/0.0.stamp.XXX) &&
+    newer=$(mktemp $PWD/0.1.newer.XXX) &&
+    sleep 1.0 &&
+    cat $newer &&
+    touch $stamp &&
+    sleep 1.0 &&
+    cat $newer ||
+    return 1;
+
+    find $newer -anewer $stamp | grep -q $newer || {
+	echo "$NAME: your filesystem seems to be using relatime";
+	return 1;
+    }
+
+    type nd &> /dev/null || {
+        echo "$NAME: please add the 'nd' utility to PATH (it comes with nbic)"
+        return 1;
+    }
+
+    nd $dir;
+
+    cd $dir &&
+    sudo find . -path ./proc -prune -o -anewer $stamp -o -cnewer $stamp -o -newer $stamp > $raw &&
+    cd $OLDPWD &&
+    rm $stamp $newer || 
+    return 1;
+
+    build_cpio $dir $out $raw || return 1;
+
+    return 0;
+}
+
+function main()
+{
+    local dir;
+    local list;
+    local out;
+
+    while [ $# -gt 0 ]; do
+        case $1 in
+        -\? | --help)
+            help; return 1;
+            ;;
+        --version)
+            echo "$VERSION"; return 1;
+            ;;
+        -d | --dir)
+            shift;
+            dir=$(cd $(dirname $1) && pwd)/$(basename $1);
+            shift;
+            ;;
+        -l | --list)
+            shift;
+            list=$(cd $(dirname $1) && pwd)/$(basename $1);
+            test -f $list || { help; return 1; }
+            shift;
+            ;;
+        -o | --out)
+            shift;
+            out=$(cd $(dirname $1) && pwd)/$(basename $1);
+            shift;
+            ;;
+        -save-temps)
+            SAVE_TEMPS=1;
+            shift;
+            ;;
+        *)
+            echo "$NAME: bad argument: $1"; return 1;
+            ;;
+        esac
+    done
+
+    [ -d "$dir" -a -n "$out" ] || { 
+        help; 
+        return 1; 
+    }
+
+    if [ -f "$list" ]; then
+        build_cpio $dir $out $list;
+    else
+        trace_chroot $dir $out;
+    fi
+
+    if [ $? -ne 0 ]; then
+        echo "$NAME: bailing out because of errors"; 
+        return 1;
+    fi
+
+    return 0;
+}
+
+main "$@";
+exit $?;

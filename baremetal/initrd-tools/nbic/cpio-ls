@@ -1,0 +1,69 @@
+#!/bin/bash
+
+NAME=cpio-ls
+
+function help()
+{
+    echo -e "\`$NAME' prints a list of the contents of a cpio\n"   \
+	    "\n"                                                   \
+	    "Usage: $NAME CPIO\n"                                  \
+	    " -?, --help      Show this help statement.\n"         \
+	    "     --version   Show version statement.\n"           \
+	    "\n"                                                   \
+	    "Examples: $NAME ramfs.cpio\n";
+}
+
+function work()
+{
+    local left=$1;
+
+    if [ ${left%%.gz} != $left ]; then
+        zcat $left | cpio -t --quiet | sort > /tmp/left.$$ || return 1;
+    else
+        cpio -t --quiet < $left | sort > /tmp/left.$$ || return 1;
+    fi
+
+    cat /tmp/left.$$ || return 1;
+    rm -f /tmp/left.$$ /tmp/right.$$ || return 1;
+
+    return 0;
+}
+
+function main()
+{
+    local left;
+
+    while [ $# -gt 0 ]; do
+        case $1 in
+        -\? | --help)
+            help; return 1;
+            ;;
+        --version)
+            nbic --version; return 1;
+            ;;
+        *)
+            if [ -z "$left" ]; then
+	    	left=$1;
+	    else
+	        echo "$NAME: too many arguments: $1"
+		return 1;
+	    fi
+	    shift;
+            ;;
+        esac
+    done
+
+    [ -z "$left" ] && { 
+    	help; 
+	return 1;
+    }
+
+    work $left || { 
+    	echo "$NAME: bailing out because of errors"; return 1;
+    }
+
+    return 0;
+}
+
+main "$@";
+exit $?;

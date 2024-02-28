@@ -1,0 +1,71 @@
+#!/bin/bash
+
+NAME=cpio-diff
+
+function help()
+{
+    echo -e "\`$NAME' prints a diff between two cpio archives\n"   \
+	    "\n"                                                   \
+	    "Usage: $NAME LEFT RIGHT\n"                            \
+	    " -?, --help      Show this help statement.\n"         \
+	    "     --version   Show version statement.\n"           \
+	    "\n"                                                   \
+	    "Examples: $NAME left.cpio right.cpio\n";
+}
+
+function work()
+{
+    local left=$1;
+    local right=$2;
+
+    cpio -t --quiet < $left | sort > /tmp/left.$$ || return 1;
+    cpio -t --quiet < $right | sort > /tmp/right.$$ || return 1;
+
+    diff -u /tmp/left.$$ /tmp/right.$$;
+
+    rm -f /tmp/left.$$ /tmp/right.$$ || return 1;
+
+    return 0;
+}
+
+function main()
+{
+    local left;
+    local right;
+
+    while [ $# -gt 0 ]; do
+        case $1 in
+        -\? | --help)
+            help; return 1;
+            ;;
+        --version)
+            nbic --version; return 1;
+            ;;
+        *)
+            if [ -z "$left" ]; then
+	    	left=$1;
+	    elif [ -z "$right" ]; then
+	    	right=$1;
+	    else
+	        echo "$NAME: too many arguments: $1"
+		return 1;
+	    fi
+	    shift;
+            ;;
+        esac
+    done
+
+    [ -z "$left" -o -z "$right" ] && { 
+    	help; 
+	return 1;
+    }
+
+    work $left $right || { 
+    	echo "$NAME: bailing out because of errors"; return 1;
+    }
+
+    return 0;
+}
+
+main "$@";
+exit $?;

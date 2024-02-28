@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -e
+
+img=$1
+name=${img%%.img}
+
+test -z "$1" && {
+    echo "usage: $(basename $0) IMG"
+    exit 1
+}
+
+qemu-img convert $img -O vmdk appliance.vmdk
+rm -f $name.zip
+rm -f -r $name
+mkdir $name
+cp appliance.vmx $name
+mv appliance.vmdk $name
+zip -9 -r $name.zip $name
+rm -f -r $name

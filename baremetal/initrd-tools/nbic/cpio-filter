@@ -1,0 +1,86 @@
+#!/bin/bash
+
+NAME=cpio-filter
+
+function help()
+{
+    echo -e "\`$NAME' filters files while copying a cpio archive\n"        \
+	    "\n"                                                           \
+	    "Usage: $NAME -i CPIO1 -o CPIO2 -x FILES\n"                    \
+	    " -?, --help          Show this help statement\n"              \
+	    "     --version       Show version statement\n"                \
+	    " -i, --in CPIO1      Use CPIO1 as input archive\n"            \
+	    " -o, --out CPIO2     Create output archive CPIO2\n"           \
+	    " -x, --except FILES  Do not copy FILES from CPIO1 to CPIO2\n" \
+	    "\n"                                                           \
+	    "Examples: $NAME -i foo.cpio -o bar.cpio -x bin/ls\n";
+}
+
+function work()
+{
+    local cpio1="$1";
+    local cpio2="$2";
+    local files="$3";
+
+    cpio1=$(cd $(dirname $cpio1) && pwd)/$(basename $cpio1);
+    cpio2=$(cd $(dirname $cpio2) && pwd)/$(basename $cpio2);
+    files=$(echo $files | sed 's, ,|,g');
+
+    local time=$(date +%s);
+    local bounce=${cpio2}.${time}.d;
+    local list=${cpio2}.${time}.list;
+
+    mkdir $bounce &&
+    cd $bounce &&
+    sudo cpio -id --quiet --no-absolute-filenames < $cpio1 &&
+    sudo find . | egrep -v "$files" > $list &&
+    sudo cpio -o --quiet -H newc -O $cpio2 < $list &&
+    sudo chmod 666 $cpio2 &&
+    sudo rm $list &&
+    sudo rm -r -f $bounce || 
+    return 1;
+
+    return 0;
+}
+
+function main()
+{
+    local cpio1; local cpio2; local files;
+
+    while [ $# -gt 0 ]; do
+        case $1 in
+        -\? | --help)
+            help; return 1;
+            ;;
+        --version)
+            nbic --version; return 1;
+            ;;
+        -i | --in)
+            shift; cpio1=$1; shift;
+            ;;
+        -o | --out)
+            shift; cpio2=$1; shift;
+            ;;
+        -x | --except)
+            shift; files="$1"; shift;
+            ;;
+        *)
+	    echo "$NAME: bad argument: $1"; return 1;
+            ;;
+        esac
+    done
+
+    [ -f "$cpio1" -a ! -f "$cpio2" -a -n "$files" ] || { 
+    	help; 
+	return 1; 
+    }
+
+    work $cpio1 $cpio2 "$files" || { 
+    	echo "$NAME: bailing out because of errors"; return 1;
+    }
+
+    return 0;
+}
+
+main "$@";
+exit $?;

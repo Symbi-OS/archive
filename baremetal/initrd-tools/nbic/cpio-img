@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -e
+
+cpio=$1
+name=${cpio%%.cpio}
+
+test -z "$1" && {
+    echo "usage: $(basename $0) CPIO"
+    exit 1
+}
+
+cp template.img $name.img
+disk-cpio $cpio $name.img

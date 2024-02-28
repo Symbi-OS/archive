@@ -1,0 +1,105 @@
+#!/bin/bash
+
+NAME=cpio-edit
+
+function help()
+{
+    echo -e "\`$NAME' edits cpio archives by dropping user in chroot shell\n" \
+	    "\n"                                                              \
+	    "Usage: $NAME CPIO [DIR]\n"                                       \
+	    " -?, --help      Show this help statement\n"                     \
+	    "     --version   Show version statement\n"                       \
+	    "\n"                                                              \
+	    "Examples: $NAME foo.cpio\n"                                      \
+	    "          $NAME foo.cpio bar/\n"                                 \
+	    "\n"                                                              \
+	    "Notes: the two-argument form has nbic semantics\n";
+}
+
+function merge()
+{
+    local cpio=$1;
+    local dir=$2;
+    local tmp=$(mktemp 0.nbic.XXXXXX);
+    local out=$(mktemp 1.nbic.XXXXXX);
+
+    nbic -d $dir -o $tmp &&
+    cpio-merge -l $cpio -r $tmp -o $out &&
+    rm $tmp &&
+    mv $out $cpio ||
+    return 1;
+
+    return 0;
+}
+
+function work()
+{
+    local cpio=$1;
+
+    local dir=$(mktemp -d $cpio.XXXXXX);
+    local tmp=$(mktemp $cpio.XXXXXX);
+
+    cpio-unpack -f $cpio -d $dir &&
+    nd $dir &&
+    cpio-pack -d $dir -o $tmp &&
+    sudo rm -r -f $dir &&
+    sudo mv -f $tmp $cpio &&
+    sudo chown $USER $cpio ||
+    return 1;
+
+    return 0;
+}
+
+function main()
+{
+    local cpio;
+    local dir;
+
+    while [ $# -gt 0 ]; do
+        case $1 in
+        -\? | --help)
+            help; return 1;
+            ;;
+        --version)
+            nbic --version; return 1;
+            ;;
+        *)
+            if [ -z "$cpio" ]; then
+                cpio=$(cd $(dirname $1) && pwd)/$(basename $1);
+            elif [ -z "$dir" ]; then
+                dir=$(cd $(dirname $1) && pwd)/$(basename $1);
+	    else
+	        echo "$NAME: too many arguments: $1";
+		return 1;
+	    fi
+	    shift;
+            ;;
+        esac
+    done
+   
+    if [ ! -f "$cpio" ]; then
+    	help;
+	return 1;
+    fi
+
+    file "$cpio" | grep -q "cpio archive" || {
+        echo "error: argument is not a cpio archive";
+        return 1;
+    }
+
+    if [ -n "$dir" ]; then
+	merge "$cpio" "$dir";
+    else
+        work "$cpio";
+    fi
+
+    if [ $? -ne 0 ]; then
+    	echo "$NAME: bailing out because of errors";
+	return 1;
+    fi
+
+    return 0;
+}
+
+main "$@";
+exit $?;

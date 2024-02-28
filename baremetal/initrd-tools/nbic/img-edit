@@ -1,0 +1,77 @@
+#!/bin/bash
+
+NAME=img-edit
+
+function help()
+{
+    echo -e "\`$NAME' edits disk images by dropping user in chroot shell\n"   \
+	    "\n"                                                              \
+	    "Usage: $NAME DISK\n"                                             \
+	    " -?, --help      Show this help statement\n"                     \
+	    "     --version   Show version statement\n"                       \
+	    "\n"                                                              \
+	    "Examples: $NAME template.img\n"                                  \
+	    "          $NAME template.vmdk\n"                                 \
+	    "\n"                                                              \
+	    "Notes: VMWare images undergo internal conversion to qemu images\n";
+}
+
+function work()
+{
+    local disk=$1;
+
+    local dir=$(mktemp -d 000.$NAME.XXXXXX);
+
+    test -d "$dir" &&
+    sudo mount -o loop,offset=32256 $disk $dir &&
+    sudo chmod 755 $dir &&
+    cd $dir &&
+    sudo /bin/bash &&
+    cd $OLDPWD &&
+    sudo umount $dir &&
+    rmdir $dir ||
+    return 1;
+
+    return 0;
+}
+
+function main()
+{
+    local disk;
+
+    while [ $# -gt 0 ]; do
+        case $1 in
+        -\? | --help)
+            help; return 1;
+            ;;
+        --version)
+            nbic --version; return 1;
+            ;;
+        *)
+            if [ -z "$disk" ]; then
+                disk=$(cd $(dirname $1) && pwd)/$(basename $1);
+	    else
+	        echo "$NAME: too many arguments: $1"; return 1;
+	    fi
+	    shift;
+            ;;
+        esac
+    done
+   
+    if [ ! -f "$disk" ]; then
+    	help;
+	return 1;
+    fi
+
+    work "$disk";
+
+    if [ $? -ne 0 ]; then
+    	echo "$NAME: bailing out because of errors";
+	return 1;
+    fi
+
+    return 0;
+}
+
+main "$@";
+exit $?;

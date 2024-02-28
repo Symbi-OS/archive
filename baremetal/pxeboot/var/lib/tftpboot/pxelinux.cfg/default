@@ -1,0 +1,15 @@
+default menu.c32
+prompt 0
+timeout 1
+
+label symbiote
+menu default
+kernel vmlinuz
+
+append initrd=initrd console=tty1,115200 console=ttyS0,115200 nr_cpus=16 intel_idle.max_cstate=0 processor.max_cstate=0 ip=192.168.19.35:::255.255.255.0::eth0:none root=/dev/ram0 nosmep nosmap mitigations=off
+
+#append initrd=initrd console=tty0 nosmep nosmap biosdevname=0 nopti nokaslr ip=192.168.19.35:::255.255.255.0::eth0:none root=/dev/ram0 -- --protected-mode no --save '' --appendonly no"
+
+#ontimeout INSTALL
+#        menu label Install
+#append initrd=initrd ip=dhcp console=tty0 nosmep nosmap biosdevname=0 nopti nokaslr ip=192.168.19.35:::255.255.255.0::eth0:none root=/dev/ram0 -- --protected-mode no --save '' --appendonly no"

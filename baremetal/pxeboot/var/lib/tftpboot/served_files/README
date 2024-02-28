@@ -1,0 +1,3 @@
+vanilla_vmlinuz is a classic 5.14 linux kernel
+symbiote_vmlinuz is a symbiote kernel with config for elevate turned OFF
+vmlinuz is the symbiote kernel with config for elevate turned ON

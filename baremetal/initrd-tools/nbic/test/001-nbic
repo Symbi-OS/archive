@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -x
+set -e
+export PATH=$(dirname $PWD):$PATH
+sudo rm -rf /tmp/tmp1
+mkdir /tmp/tmp1
+cd /tmp/tmp1
+strace -e trace=file -f bash -c /bin/ls --version >/dev/null 2> bash.strace
+awk -F\" '{print $2}' bash.strace > bash.strace.1
+grep / bash.strace.1 > bash.strace.2
+cp bash.strace.2 bash.strace.3
+find -L /lib/ld-* /lib/libc.so* >> bash.strace.3
+sort bash.strace.3 > bash.strace.4
+uniq bash.strace.4 > bash.strace.5
+egrep -v "$PWD|/proc|/sys|/dev" bash.strace.5 > bash.strace.6
+cat bash.strace.6 | xargs find > bash.strace.7 2> /dev/null || true
+sudo rsync -aL --files-from=bash.strace.7 / /tmp/tmp2/
+sudo chroot /tmp/tmp2 /bin/ls --version
+sudo touch /tmp/tmp2/chroot
+sudo chown $USER /tmp/tmp2/chroot
+echo '#!/bin/bash' > /tmp/tmp2/chroot
+echo '/bin/ls --version' >> /tmp/tmp2/chroot
+chmod +x /tmp/tmp2/chroot
+nd /tmp/tmp2
+nbic -d /tmp/tmp2 -o /tmp/tmp2.cpio
+cpio-fsck /tmp/tmp2.cpio /tmp/tmp2
+cpio-unpack -f /tmp/tmp2.cpio -d /tmp/tmp3
+nd /tmp/tmp3
+sudo rm -rf /tmp/tmp1 /tmp/tmp2 /tmp/tmp3

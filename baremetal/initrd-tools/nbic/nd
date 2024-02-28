@@ -1,0 +1,41 @@
+#!/bin/bash
+
+HOME=/root
+LOGNAME=root
+TERM=vt100
+PATH=/bin:/usr/bin:/usr/local/bin:/sbin:/usr/sbin
+ENV="HOME=$HOME LOGNAME=$LOGNAME TERM=$TERM PATH=$PATH"
+
+test $# -eq 1 || {
+    echo "usage: $(basename $0) DIR"
+    exit 1
+}
+
+test -f $1/init || {
+    echo "WARN: creating simple $1/init" &&
+    echo -e '#!/bin/bash\n/bin/bash' > init &&
+    chmod +x init &&
+    sudo mv init $1/init || 
+    exit 1
+}
+
+test -f $1/chroot || {
+    echo "WARN: creating simple $1/chroot" &&
+    echo -e '#!/bin/bash\n/bin/bash' > chroot &&
+    chmod +x chroot &&
+    sudo mv chroot $1/chroot || 
+    exit 1
+}
+
+test -x $1/chroot || {
+    echo "WARN: setting executable bit on $1/chroot" &&
+    sudo chown $USER $1/chroot &&
+    chmod 755 $1/chroot || 
+    exit 1
+}
+
+if test -f $1/proc/cmdline; then 
+    sudo env -i $ENV chroot $1 /bin/bash
+else
+    sudo env -i $ENV chroot $1 /chroot
+fi
