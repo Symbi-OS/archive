@@ -1,0 +1,4 @@
+tar rem :1234
+add-symbol-file ../Apps/app
+source ../linux/vmlinux-gdb.py
+c
